@@ -212,14 +212,34 @@ public:
         }
         if (core_)  // the DLSS-G library NGX loaded, which may not be the one asked for
             loaded_ = ModulePath(GetModuleHandleW(L"nvngx_dlssg.dll"));
-        for (size_t i = 0; i < setup.recording->parameters.size(); i++)
-            index_[setup.recording->parameters[i]] = i;
+        param_meta_.resize(setup.recording->parameters.size());
+        const auto& float_names = FloatNames();
+        const auto& host_names = HostNames();
+        for (size_t i = 0; i < setup.recording->parameters.size(); i++) {
+            const std::string& name = setup.recording->parameters[i];
+            index_[name] = i;
+            param_meta_[i].is_host = host_names.count(name) != 0;
+            param_meta_[i].is_float = float_names.count(name) != 0;
+            param_meta_[i].is_reset = (name == NVSDK_NGX_DLSSG_Parameter_Reset);
+        }
         return true;
     }
 
     bool Evaluate(ID3D12GraphicsCommandList* list, const FgFrame& frame, const FgInputs& inputs,
                   const FgOutputs& outputs, std::string& error) override {
         const record::Recording& rec = *setup_.recording;
+        // Resolve input texture pointers once for all generated frames in this real frame
+        ID3D12Resource *tex_backbuffer = nullptr, *tex_hudless = nullptr, *tex_ui = nullptr,
+                       *tex_ui_alpha = nullptr, *tex_depth = nullptr, *tex_motion = nullptr;
+        for (const auto& [role, res] : inputs.textures) {
+            if (role == "backbuffer") tex_backbuffer = res;
+            else if (role == "hudless") tex_hudless = res;
+            else if (role == "ui") tex_ui = res;
+            else if (role == "ui_alpha") tex_ui_alpha = res;
+            else if (role == "depth") tex_depth = res;
+            else if (role == "motion") tex_motion = res;
+        }
+
         // storage for each call's matrices, alive while the list runs: the recorded ones, then the defaults
         const size_t stride = rec.matrices.size() + DEFAULT_MATRICES.size();
         matrices_.assign(frame.count * stride, {});
@@ -235,32 +255,32 @@ public:
             p->Set(NVSDK_NGX_DLSSG_Parameter_BackbufferFormat, (unsigned)setup_.backbuffer_format);
             uint32_t recorded_reset = 0;
             for (size_t k = 0; k < rec.parameters.size(); k++) {
-                const std::string& name = rec.parameters[k];
                 const auto& v = c.values[k];  // has, unsigned, float bits
+                if (!v[0])
+                    continue;
+                const auto& meta = param_meta_[k];
+                if (meta.is_reset && (v[0] & 1))
+                    recorded_reset = v[1];
+                if (meta.is_host)
+                    continue;
                 float f;
                 std::memcpy(&f, &v[2], 4);
-                if (name == NVSDK_NGX_DLSSG_Parameter_Reset && (v[0] & 1))
-                    recorded_reset = v[1];
-                if (!v[0] || HostNames().count(name))
-                    continue;
-                const bool as_float = (v[0] & 2) && (!(v[0] & 1) || FloatNames().count(name) || f != (float)v[1]);
+                const bool as_float = (v[0] & 2) && (!(v[0] & 1) || meta.is_float || f != (float)v[1]);
                 if (as_float)
-                    p->Set(name.c_str(), f);
+                    p->Set(rec.parameters[k].c_str(), f);
                 else
-                    p->Set(name.c_str(), v[1]);
+                    p->Set(rec.parameters[k].c_str(), v[1]);
             }
             p->Set(NVSDK_NGX_DLSSG_Parameter_Reset, frame.reset ? 1u : recorded_reset);
             p->Set(NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, frame.count);
             p->Set(NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, i);
             SetMatrices(c, (i - 1) * stride);
-            static const std::pair<const char*, const char*> SLOTS[] = {
-                {"backbuffer", NVSDK_NGX_DLSSG_Parameter_Backbuffer}, {"hudless", NVSDK_NGX_DLSSG_Parameter_HUDLess},
-                {"ui", NVSDK_NGX_DLSSG_Parameter_UI}, {"ui_alpha", NVSDK_NGX_DLSSG_Parameter_UIAlpha},
-                {"depth", NVSDK_NGX_DLSSG_Parameter_Depth}, {"motion", NVSDK_NGX_DLSSG_Parameter_MVecs}};
-            for (const auto& [role, slot] : SLOTS) {
-                auto it = inputs.textures.find(role);
-                p->Set(slot, it == inputs.textures.end() ? (ID3D12Resource*)nullptr : it->second);
-            }
+            p->Set(NVSDK_NGX_DLSSG_Parameter_Backbuffer, tex_backbuffer);
+            p->Set(NVSDK_NGX_DLSSG_Parameter_HUDLess, tex_hudless);
+            p->Set(NVSDK_NGX_DLSSG_Parameter_UI, tex_ui);
+            p->Set(NVSDK_NGX_DLSSG_Parameter_UIAlpha, tex_ui_alpha);
+            p->Set(NVSDK_NGX_DLSSG_Parameter_Depth, tex_depth);
+            p->Set(NVSDK_NGX_DLSSG_Parameter_MVecs, tex_motion);
             p->Set(NVSDK_NGX_DLSSG_Parameter_OutputInterpolated, outputs.generated[i - 1]);
             p->Set(NVSDK_NGX_DLSSG_Parameter_OutputReal, outputs.real);
             const NVSDK_NGX_Result r = evaluate_(list, handle_, p, nullptr);
@@ -400,6 +420,12 @@ private:
     NVSDK_NGX_Handle* handle_ = nullptr;
     unsigned max_count_ = 0;
     FgSetup setup_;
+    struct ParamMeta {
+        bool is_host = false;
+        bool is_float = false;
+        bool is_reset = false;
+    };
+    std::vector<ParamMeta> param_meta_;
     std::unordered_map<std::string, size_t> index_;
     std::vector<std::array<float, 16>> matrices_;
 };

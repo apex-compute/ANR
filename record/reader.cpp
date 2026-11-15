@@ -415,7 +415,7 @@ bool Decode(Recording& r, const IndexRecord& ix, Pool& pool, DecodeScratch& s,
         size_t offset = 0;
         for (uint32_t c = 0; c < x.channels; c++) {
             const uint32_t kind = (x.kinds >> (8 * c)) & 0xFF, type = kind >> 5;
-            const uint32_t size = type == 2 ? 4 : type == 1 ? 2 : (kind & 31) <= 8 ? 1 : 2;
+            const uint32_t size = type == 2 ? 4 : type == 1 ? 2 : (kind & 31) <= 8 ? 1 : (kind & 31) <= 16 ? 2 : 4;
             const uint32_t* src = v[c].data() + p0;
             for (size_t p = 0; p < w; p++) {
                 uint32_t value = src[p];
@@ -444,11 +444,36 @@ bool Decode(Recording& r, const IndexRecord& ix, Pool& pool, DecodeScratch& s,
                 for (std::vector<uint32_t>& plane : s.planes[t])
                     for (size_t y = y0; y < y1; y++) {
                         uint32_t* row = plane.data() + y * x.width;
-                        for (size_t p = 1; p < x.width; p++)
-                            row[p] += row[p - 1];
-                        if (y > y0)
-                            for (size_t p = 0; p < x.width; p++)
-                                row[p] += row[p - x.width];
+                        if (x.width > 0) {
+                            uint32_t acc = row[0];
+                            size_t p = 1;
+                            for (; p + 3 < x.width; p += 4) {
+                                acc += row[p + 0]; row[p + 0] = acc;
+                                acc += row[p + 1]; row[p + 1] = acc;
+                                acc += row[p + 2]; row[p + 2] = acc;
+                                acc += row[p + 3]; row[p + 3] = acc;
+                            }
+                            for (; p < x.width; p++) {
+                                acc += row[p];
+                                row[p] = acc;
+                            }
+                        }
+                        if (y > y0) {
+                            const uint32_t* prev = row - x.width;
+                            size_t p = 0;
+                            for (; p + 8 <= x.width; p += 8) {
+                                row[p + 0] += prev[p + 0];
+                                row[p + 1] += prev[p + 1];
+                                row[p + 2] += prev[p + 2];
+                                row[p + 3] += prev[p + 3];
+                                row[p + 4] += prev[p + 4];
+                                row[p + 5] += prev[p + 5];
+                                row[p + 6] += prev[p + 6];
+                                row[p + 7] += prev[p + 7];
+                            }
+                            for (; p < x.width; p++)
+                                row[p] += prev[p];
+                        }
                     }
                 for (size_t y = y0; y < y1; y++)
                     pack(t, (uint32_t)y);

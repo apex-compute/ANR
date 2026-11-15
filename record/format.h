@@ -97,7 +97,7 @@ constexpr uint32_t TexelBytes(const Channels& c, bool packed_10_10_10_2) {
     uint32_t bytes = 0;
     for (uint32_t ch = 0; ch < c.channels; ch++) {
         const uint32_t kind = KindOf(c, ch), type = kind >> 5;
-        bytes += type == KIND_F32 ? 4 : type == KIND_F16 ? 2 : (kind & 31) <= 8 ? 1 : 2;
+        bytes += type == KIND_F32 ? 4 : type == KIND_F16 ? 2 : (kind & 31) <= 8 ? 1 : (kind & 31) <= 16 ? 2 : 4;
     }
     return bytes;
 }

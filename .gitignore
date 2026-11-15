@@ -1,2 +1,18 @@
 /bazel-*
 /.bazelrc.user
+
+# Build and analysis artifacts
+*.part
+*.log
+out/
+cmp/
+
+# Editor and IDE metadata
+.vscode/
+.vs/
+.idea/
+
+# Python cache
+__pycache__/
+*.py[cod]
+

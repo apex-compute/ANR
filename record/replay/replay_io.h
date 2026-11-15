@@ -76,6 +76,7 @@ inline DXGI_FORMAT DxgiOf(const record::Recording& rec, const record::Texture& t
     case 100: return DXGI_FORMAT_R32_FLOAT;
     case 103: return DXGI_FORMAT_R32G32_FLOAT;
     case 126: return DXGI_FORMAT_D32_FLOAT;
+    case 129: return DXGI_FORMAT_D24_UNORM_S8_UINT;
     case 130: return DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
     default: return DXGI_FORMAT_UNKNOWN;
     }

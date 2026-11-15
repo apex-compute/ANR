@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build & Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.8.5
+        with:
+          bazelisk-cache: true
+          disk-cache: true
+          repository-cache: true
+
+      - name: Build Linux targets
+        run: |
+          bazel build //record:nr-record //record/replay:nr-video //renderer
+
+      - name: Run Unit Tests
+        run: |
+          bazel test //renderer/clips/... //renderer/clips/video:demux_test
+
+      - name: Cross-compile Windows package
+        run: |
+          bazel build --config=windows_cross //record/capture:package //record/replay:nr-replay

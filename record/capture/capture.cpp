@@ -698,8 +698,9 @@ std::unique_ptr<record::Recorder> StartRecording(Feature& f, const List& list, c
 
 // Each call's DLSS-G parameters as raw bits.
 void RecordCall(const NVSDK_NGX_Parameter* p, unsigned index, unsigned count, uint64_t frame) {
-    std::vector<uint8_t> values(record::CallBytes(std::size(PARAMETERS), std::size(MATRICES)) -
-                                sizeof(record::CallHeader));
+    constexpr size_t PAYLOAD_SIZE = (size_t)(record::CallBytes(std::size(PARAMETERS), std::size(MATRICES)) -
+                                             sizeof(record::CallHeader));
+    alignas(uint64_t) uint8_t values[PAYLOAD_SIZE];
     record::CallHeader call;
     call.index = index;
     call.count = count;
@@ -707,7 +708,7 @@ void RecordCall(const NVSDK_NGX_Parameter* p, unsigned index, unsigned count, ui
     LARGE_INTEGER qpc;
     QueryPerformanceCounter(&qpc);
     call.qpc = qpc.QuadPart;
-    uint8_t* at = values.data();
+    uint8_t* at = values;
     for (const char* name : PARAMETERS) {
         unsigned u = 0;
         float f = 0;
@@ -727,7 +728,7 @@ void RecordCall(const NVSDK_NGX_Parameter* p, unsigned index, unsigned count, ui
             std::memcpy(at + 4, pointer, 64);
         at += 68;
     }
-    g_recorder->Call(call, values.data());
+    g_recorder->Call(call, values);
 }
 
 // The keys, the start and the stop at a real frame; then this frame's textures into the recording.
@@ -878,14 +879,28 @@ bool Bypass(Feature& f, const List& l, const NVSDK_NGX_Parameter* p) {
             Log("OutputReal: %s", fits ? "the backbuffer is copied in" : "not written (format or size differs)");
         }
         if (fits) {
-            transition(backbuffer, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
-            transition(real, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST);
+            D3D12_RESOURCE_BARRIER pre[2] = {};
+            pre[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            pre[0].Transition = {backbuffer, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                 D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE};
+            pre[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            pre[1].Transition = {real, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                 D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST};
+            list->ResourceBarrier(2, pre);
+
             D3D12_TEXTURE_COPY_LOCATION to = {real, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, {}};
             D3D12_TEXTURE_COPY_LOCATION from = {backbuffer, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, {}};
             const D3D12_BOX box = {x, y, 0, x + (UINT)r.Width, y + r.Height, 1};
             list->CopyTextureRegion(&to, 0, 0, 0, &from, &box);
-            transition(real, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-            transition(backbuffer, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+            D3D12_RESOURCE_BARRIER post[2] = {};
+            post[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            post[0].Transition = {real, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS};
+            post[1].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+            post[1].Transition = {backbuffer, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+                                  D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE};
+            list->ResourceBarrier(2, post);
         }
     }
     return true;

@@ -477,6 +477,8 @@ void Copier(std::shared_ptr<State> r) {
 void Worker(std::shared_ptr<State> r) {
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
     ZSTD_CCtx* cctx = r->level ? ZSTD_createCCtx() : nullptr;
+    if (cctx)
+        ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0);
     const size_t bound = ZSTD_compressBound(BLOCK_BYTES);
     for (;;) {
         State::Job job;
@@ -547,16 +549,23 @@ void Writer(std::shared_ptr<State> r) {
         if (f) {
             const auto start = Clock::now();
             const uint32_t blocks = (uint32_t)f->sizes.size();
-            std::vector<uint8_t> head(sizeof(BlocksHeader) + 4ull * blocks);
+            const size_t head_size = sizeof(BlocksHeader) + 4ull * blocks;
+            alignas(BlocksHeader) uint8_t stack_head[512];
+            std::vector<uint8_t> heap_head;
+            uint8_t* head_ptr = stack_head;
+            if (head_size > sizeof(stack_head)) {
+                heap_head.resize(head_size);
+                head_ptr = heap_head.data();
+            }
             BlocksHeader h;
             h.blocks = blocks;
             h.raw_bytes = f->index.raw_bytes;
             h.block_bytes = BLOCK_BYTES;
             h.level = r->level;
-            std::memcpy(head.data(), &h, sizeof(h));
-            std::memcpy(head.data() + sizeof(h), f->sizes.data(), 4ull * blocks);
-            uint64_t bytes = head.size();
-            bool ok = !failed && std::fwrite(head.data(), 1, head.size(), r->frames) == head.size();
+            std::memcpy(head_ptr, &h, sizeof(h));
+            std::memcpy(head_ptr + sizeof(h), f->sizes.data(), 4ull * blocks);
+            uint64_t bytes = head_size;
+            bool ok = !failed && std::fwrite(head_ptr, 1, head_size, r->frames) == head_size;
             for (uint32_t b = 0; b < blocks && ok; b++) {
                 const size_t n = f->sizes[b] & ~BLOCK_STORED;
                 ok = std::fwrite(f->buffers[b], 1, n, r->frames) == n;

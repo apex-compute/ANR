@@ -61,6 +61,8 @@ bool DescribeVulkan(VkFormat format, uint32_t width, uint32_t height, Channels& 
     case VK_FORMAT_R32G32_SFLOAT: out.channels = 2, out.kinds = F32 | F32 << 8; break;
     case VK_FORMAT_D32_SFLOAT_S8_UINT: out.depth = true, out.channels = 1, out.kinds = F32; break;
     case VK_FORMAT_D32_SFLOAT: out.depth = true, out.channels = 1, out.kinds = F32; break;
+    case VK_FORMAT_D24_UNORM_S8_UINT: case VK_FORMAT_X8_D24_UNORM_PACK32:
+        out.depth = true, out.channels = 1, out.kinds = 24; break;
     case VK_FORMAT_R32_SFLOAT: out.channels = 1, out.kinds = F32; break;
     case VK_FORMAT_R16_SFLOAT: out.channels = 1, out.kinds = F16; break;
     case VK_FORMAT_R16_UNORM: out.channels = 1, out.kinds = 16; break;

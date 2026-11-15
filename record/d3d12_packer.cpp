@@ -27,7 +27,7 @@ constexpr uint32_t R8_UNORM = 9, R8G8B8A8_UNORM = 37, R8G8B8A8_SRGB = 43, B8G8R8
                    A2B10G10R10_UNORM_PACK32 = 64, R16_UNORM = 70,
                    B10G11R11_UFLOAT_PACK32 = 122, R16_SFLOAT = 76, R16G16_UNORM = 77,
                    R16G16_SFLOAT = 83, R16G16B16A16_UNORM = 91, R16G16B16A16_SFLOAT = 97, R32_SFLOAT = 100,
-                   R32G32_SFLOAT = 103, D32_SFLOAT = 126, D32_SFLOAT_S8_UINT = 130;
+                   R32G32_SFLOAT = 103, D32_SFLOAT = 126, D24_UNORM_S8_UINT = 129, D32_SFLOAT_S8_UINT = 130;
 }
 
 std::vector<char> ReadFile(const std::string& path) {
@@ -96,6 +96,9 @@ bool DescribeD3D12(const D3D12_RESOURCE_DESC& desc, Channels& out, DXGI_FORMAT& 
     case DXGI_FORMAT_R32G8X24_TYPELESS: case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
         view = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, out.vk_format = vk::D32_SFLOAT_S8_UINT, out.depth = true,
         out.channels = 1, out.kinds = F32; break;
+    case DXGI_FORMAT_R24G8_TYPELESS: case DXGI_FORMAT_D24_UNORM_S8_UINT:
+        view = DXGI_FORMAT_R24_UNORM_X8_TYPELESS, out.vk_format = vk::D24_UNORM_S8_UINT, out.depth = true,
+        out.channels = 1, out.kinds = 24; break;
     case DXGI_FORMAT_D32_FLOAT:
         view = DXGI_FORMAT_R32_FLOAT, out.vk_format = vk::D32_SFLOAT, out.depth = true, out.channels = 1,
         out.kinds = F32; break;

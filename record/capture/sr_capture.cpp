@@ -548,8 +548,9 @@ std::unique_ptr<record::Recorder> StartRecording(Feature& f, ID3D12GraphicsComma
 }
 
 void RecordCall(const NVSDK_NGX_Parameter* p, uint64_t frame) {
-    std::vector<uint8_t> values(record::CallBytes(std::size(PARAMETERS), std::size(MATRICES)) -
-                                sizeof(record::CallHeader));
+    constexpr size_t PAYLOAD_SIZE = (size_t)(record::CallBytes(std::size(PARAMETERS), std::size(MATRICES)) -
+                                             sizeof(record::CallHeader));
+    alignas(uint64_t) uint8_t values[PAYLOAD_SIZE];
     record::CallHeader call;
     call.index = 1;
     call.count = 1;
@@ -557,7 +558,7 @@ void RecordCall(const NVSDK_NGX_Parameter* p, uint64_t frame) {
     LARGE_INTEGER qpc;
     QueryPerformanceCounter(&qpc);
     call.qpc = qpc.QuadPart;
-    uint8_t* at = values.data();
+    uint8_t* at = values;
     for (const char* name : PARAMETERS) {
         unsigned u = 0;
         float f = 0;
@@ -577,7 +578,7 @@ void RecordCall(const NVSDK_NGX_Parameter* p, uint64_t frame) {
             std::memcpy(at + 4, pointer, 64);
         at += 68;
     }
-    g_recorder->Call(call, values.data());
+    g_recorder->Call(call, values);
 }
 
 // After the forward's call: the keys, the start and the stop; then this frame's textures into the recording.

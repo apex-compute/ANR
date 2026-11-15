@@ -116,14 +116,9 @@ uint rec_width(uint c)
 // r modulo 2^width as the integer nearest 0, zigzagged.
 uint rec_zigzag(uint r, uint width)
 {
-    if (width < 32)
-    {
-        const uint mask = (1u << width) - 1u;
-        r &= mask;
-        if (r >= (1u << (width - 1)))
-            r |= ~mask;
-    }
-    return (r << 1) ^ uint(int(r) >> 31);
+    const int shift = int(32 - width);
+    const int s = width < 32 ? (int(r) << shift) >> shift : int(r);
+    return (uint(s) << 1) ^ uint(s >> 31);
 }
 
 uint rec_bits(uint z)
@@ -176,20 +171,37 @@ void record_pack(uint3 group : SV_GroupID, uint gi : SV_GroupIndex)
             }
     }
     if (!reference)
-        [unroll]
-        for (uint c = 0; c < 4; c++)
-            if (c < C)
-            {
-                [unroll]
-                for (int dx = 0; dx < 8; dx++)
-                    rec_mem[dx * 256 + gi] = z[dx][c];
-                GroupMemoryBarrierWithGroupSync();
-                if (row != 0)
+    {
+        if (WaveGetLaneCount() >= 8)
+        {
+            const uint lane_above = WaveGetLaneIndex() - 1;
+            [unroll]
+            for (uint c = 0; c < 4; c++)
+                if (c < C && row != 0)
+                {
                     [unroll]
                     for (int dx = 0; dx < 8; dx++)
-                        z[dx][c] -= rec_mem[dx * 256 + gi - 1];
-                GroupMemoryBarrierWithGroupSync();
-            }
+                        z[dx][c] -= WaveReadLaneAt(z[dx][c], lane_above);
+                }
+        }
+        else
+        {
+            [unroll]
+            for (uint c = 0; c < 4; c++)
+                if (c < C)
+                {
+                    [unroll]
+                    for (int dx = 0; dx < 8; dx++)
+                        rec_mem[dx * 256 + gi] = z[dx][c];
+                    GroupMemoryBarrierWithGroupSync();
+                    if (row != 0)
+                        [unroll]
+                        for (int dx = 0; dx < 8; dx++)
+                            z[dx][c] -= rec_mem[dx * 256 + gi - 1];
+                    GroupMemoryBarrierWithGroupSync();
+                }
+        }
+    }
     uint4 m = uint4(0);
     [unroll]
     for (int dx = 0; dx < 8; dx++)

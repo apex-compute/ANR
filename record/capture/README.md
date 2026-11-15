@@ -49,7 +49,7 @@ With `auto`, an OptiScaler setting of `auto` (OptiScaler picks per game) gives `
 
 - **What OptiScaler hands over.** The game's inputs after OptiScaler's translation: for DLSS games NGX's parameters as the game set them; for FSR and XeSS games OptiScaler's NGX names, including `FSR.reactive`, `FSR.transparencyAndComposition` and FSR's camera (`FSR.cameraNear` ...). OptiScaler's own options that change the inputs (its output scaling, mask and exposure overrides) apply before the DLL sees them.
 - **RR.** Stock OptiScaler sends DLSS-RR (`nvngx_dlssd`) calls to NVIDIA's DLSS-RR only and shows no upscaler list for them. An OptiScaler build with the change that sends them to a picked custom runtime too (not in stock OptiScaler yet) lists `DLSSD` and `nr-record` in the menu for RR games, and records them the same way. The DLL records RR features with their guide buffers (`ngx-dlssd`) and forwards them to NVIDIA's DLSS-RR.
-- **Formats.** Colors RGBA16F, R11G11B10 (bit for bit), RGB10A2, RGBA8; depth D32, R32 and D32S8; motion RG16F and RG32F; masks R8. D24S8 depth is not coded yet: such a recording does not start.
+- **Formats.** Colors RGBA16F, R11G11B10 (bit for bit), RGB10A2, RGBA8; depth D32, R32, D32S8 and D24S8; motion RG16F and RG32F; masks R8.
 - **Checking it.** `nr-sr-host` plays a game with a synthetic jittered scene: under Wine with vkd3d-proton, `nr-sr-host.exe --ngx custom\nr_record_sr.dll --frames 60 --record-frames 0,59` records 59 frames through the DLL directly, and with OptiScaler as `dxgi.dll` beside it (`--ngx dxgi.dll`, `Dx12Upscaler=nr-record` in `OptiScaler.ini`) through OptiScaler's custom upscaler slot.
 
 ### AMD FidelityFX
