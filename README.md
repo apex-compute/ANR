@@ -87,6 +87,10 @@ Docs: [recording](record/README.md), [format](record/FORMAT.md), [replay and vid
 
 Build: `bazel build //record:nr-record //record/replay:nr-video //renderer`; Windows parts: `bazel build --config=windows_cross //record/capture:package //record/replay:nr-replay`.
 
+## Contributors
+
+- [@k0u3h1k](https://github.com/k0u3h1k)
+
 ## Citation
 
 ```bibtex
