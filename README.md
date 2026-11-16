@@ -100,17 +100,19 @@ Build with Bazel: `bazel build //record:nr-record //record/replay:nr-video //ren
 
 Build core tools with CMake: `cmake -B build && cmake --build build --config Release`.
 
-### Productivity Tools
+### Productivity Tools & Stability Features
 
-- **ANR Studio GUI (`tools/anr_studio.py` / `tools/anr_studio.ps1`)**: Native 1-click launcher and manager to scan installed games, pick Super Resolution & Frame Generation providers, enable low-latency Reflex/Anti-Lag pacing, and launch games directly.
+- **ANR Studio GUI (`tools/anr_studio.py` / `tools/anr_studio.ps1`)**: Native 1-click launcher and manager to scan installed games, pick Super Resolution & Frame Generation providers, configure Hardware Flip Metering & Reflex/Anti-Lag pacing, stabilize translucency, and launch games directly.
+- **Hardware Flip Metering & Dynamic Pacing**: Ultra-low-latency display scanout synchronization and queue regulation for AMD RX 7000/9000 and NVIDIA RTX 4000/5000 GPUs.
 - **Universal Hardware Video Exporter (`tools/nr_export.py` / `tools/nr_export.ps1`)**: Hardware-accelerated 10-bit AV1/HEVC/H.264 exporter with automatic GPU vendor detection (Intel QuickSync, NVIDIA NVENC, AMD AMF, and CPU fallback).
 - **Mathematical Quality Evaluator (`tools/nr_metrics.py` / `tools/nr_metrics.ps1`)**: Computes exact PSNR, SSIM, and temporal stability metrics between reference and generated frames.
 - **1-Click Windows Comparison Tool (`tools/nr_compare.py` / `tools/nr_compare.ps1`)**: Automates replaying, video extraction, and side-by-side comparison.
 - **Game Auto-Detector & Installer (`tools/game_installer.py` / `tools/game_installer.ps1`)**: Automatically scans Steam and Epic libraries and installs capture DLLs.
+- **Comprehensive Compatibility Fixes**: Dynamic subrect scaling (*No Man's Sky*), Streamline memory safety (*MSFS 2020 & 2024*), non-AVX2 baseline support, dynamic frame delta tracking (*Crimson Desert* & *Control*), descriptor ring expansion (*Like a Dragon*), and translucency stabilization (*Wuthering Waves*).
 
 ## Contributors
 
-- **k0u3h1k** ([@k0u3h1k](https://github.com/k0u3h1k)) — Performance optimizations, FSR 3 / FidelityFX FG replay engine, Reflex/Anti-Lag low-latency frame pacing, ANR Studio GUI, Universal Video Exporter, Mathematical Quality Evaluator, 1-Click Comparison Runner, Game Auto-Installer, and CMake build system. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
+- **k0u3h1k** ([@k0u3h1k](https://github.com/k0u3h1k)) — Performance optimizations, FSR 3 / FidelityFX FG replay engine, Reflex/Anti-Lag low-latency frame pacing, ANR Studio GUI, Universal Video Exporter, Mathematical Quality Evaluator, 1-Click Comparison Runner, Game Auto-Installer, comprehensive bug fixes, and CMake build system. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## Citation
 

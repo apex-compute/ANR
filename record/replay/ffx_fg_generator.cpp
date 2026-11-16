@@ -262,6 +262,9 @@ public:
         if (((PfnFfxQuery)query_)(&context_, &version.header) == 0 && version.versionName)
             version_ = version.versionName;
 
+        QueryPerformanceFrequency((LARGE_INTEGER*)&qpc_freq_);
+        last_qpc_ = 0;
+
         return true;
     }
 
@@ -322,7 +325,13 @@ public:
         prep.renderSize = {setup_.render_width, setup_.render_height};
         prep.jitterOffset = {call.jitter[0], call.jitter[1]};
         prep.motionVectorScale = {call.motion_scale[0], call.motion_scale[1]};
-        prep.frameTimeDelta = 1000.0f / 60.0f;
+        float dt = 16.666f;
+        if (call.qpc > 0 && last_qpc_ > 0 && call.qpc > last_qpc_ && qpc_freq_ > 0) {
+            dt = (float)((double)(call.qpc - last_qpc_) * 1000.0 / (double)qpc_freq_);
+            dt = std::clamp(dt, 1.0f, 100.0f);
+        }
+        last_qpc_ = call.qpc;
+        prep.frameTimeDelta = dt;
         prep.cameraNear = call.near_plane > 0 ? call.near_plane : 0.1f;
         prep.cameraFar = call.far_plane > 0 ? call.far_plane : 10000.0f;
         prep.cameraFovAngleVertical = call.fov > 0 ? call.fov : 1.0472f;
@@ -405,6 +414,8 @@ private:
     void* context_ = nullptr;
     FgSetup setup_ = {};
     uint64_t frame_id_ = 0;
+    int64_t last_qpc_ = 0;
+    int64_t qpc_freq_ = 0;
 };
 
 }  // namespace

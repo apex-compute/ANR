@@ -68,6 +68,9 @@ struct Settings {
     unsigned max_generated = 5;
     bool low_latency = false;              // Reflex / Anti-Lag frame pacing
     unsigned low_latency_target_fps = 0;  // 0: adaptive pacing ceiling (240Hz), >0: exact target FPS
+    bool flip_metering = false;            // Hardware flip metering (dynamic display scanout sync for AMD 9000 & RTX 5000)
+    bool disable_ui = false;               // UI composition bypass (fixes world-space UI & minimap jitter)
+    bool stabilize_translucency = false;   // Dilate motion vectors & camera velocity fallback (fixes ribbon/hair ghosting)
 };
 
 Settings g_settings;
@@ -109,13 +112,20 @@ std::string Trim(const std::string& s) {
     return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
 }
 
-// Low-latency frame pacing (Reflex / Anti-Lag emulator): limits GPU command queue buildup
-// to eliminate input lag spikes while frame generation is running.
+// Low-latency frame pacing & hardware flip metering (Reflex / Anti-Lag emulator):
+// limits GPU command queue buildup and eliminates input lag spikes without starving
+// CPU threads under Linux / Proton.
 struct LatencyPacer {
     LARGE_INTEGER freq = {};
     LARGE_INTEGER last_tick = {};
     bool initialized = false;
     std::mutex pace_mutex;
+
+    // Rolling history of recent frame intervals for hardware flip metering (16 frames)
+    static constexpr size_t HISTORY_CAP = 16;
+    double intervals[HISTORY_CAP] = {};
+    size_t history_idx = 0;
+    size_t history_count = 0;
 
     void Init() {
         std::lock_guard<std::mutex> lock(pace_mutex);
@@ -126,26 +136,48 @@ struct LatencyPacer {
         }
     }
 
-    void Pace(unsigned target_fps) {
+    void Pace(unsigned target_fps, bool flip_metering) {
         std::lock_guard<std::mutex> lock(pace_mutex);
         if (!freq.QuadPart)
             return;
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
-        // Default target interval: 240 Hz queue ceiling (0.00416 sec) if target_fps == 0
-        const double min_interval_sec = target_fps > 0 ? (1.0 / (double)target_fps) : 0.00416;
         double elapsed_sec = (double)(now.QuadPart - last_tick.QuadPart) / (double)freq.QuadPart;
 
-        if (elapsed_sec < min_interval_sec) {
-            const double wait_sec = min_interval_sec - elapsed_sec;
-            const DWORD sleep_ms = (DWORD)(wait_sec * 1000.0);
-            if (sleep_ms > 1)
-                Sleep(sleep_ms - 1);
+        if (flip_metering && elapsed_sec > 0.0005 && elapsed_sec < 0.2) {
+            intervals[history_idx % HISTORY_CAP] = elapsed_sec;
+            history_idx++;
+            if (history_count < HISTORY_CAP)
+                history_count++;
+        }
+
+        // Target interval determination
+        double target_interval_sec = 0.00416;  // Default 240 Hz queue ceiling
+        if (target_fps > 0) {
+            target_interval_sec = 1.0 / (double)target_fps;
+        } else if (flip_metering && history_count >= 4) {
+            std::vector<double> sorted(intervals, intervals + history_count);
+            std::sort(sorted.begin(), sorted.end());
+            const double median_interval = sorted[sorted.size() / 2];
+            // Align pace interval to 98% of display cadence to prevent queue latency buildup
+            target_interval_sec = std::clamp(median_interval * 0.98, 0.002, 0.0333);
+        }
+
+        if (elapsed_sec < target_interval_sec) {
+            const double wait_sec = target_interval_sec - elapsed_sec;
+            // Anti-starvation fix for Linux/Proton (Issue #56):
+            // On Wine/Proton, Sleep(1) often sleeps 2-4ms, starving the game loop.
+            // Only sleep if wait duration exceeds 3.5ms; otherwise use YieldProcessor spin loop.
+            if (wait_sec > 0.0035) {
+                const DWORD sleep_ms = (DWORD)((wait_sec - 0.002) * 1000.0);
+                if (sleep_ms >= 1)
+                    Sleep(sleep_ms);
+            }
             do {
                 YieldProcessor();
                 QueryPerformanceCounter(&now);
                 elapsed_sec = (double)(now.QuadPart - last_tick.QuadPart) / (double)freq.QuadPart;
-            } while (elapsed_sec < min_interval_sec);
+            } while (elapsed_sec < target_interval_sec);
         }
         last_tick = now;
     }
@@ -185,6 +217,9 @@ void ReadSettings() {
             else if (key == "max_generated") g_settings.max_generated = std::clamp((unsigned)std::stoul(value), 1u, 5u);
             else if (key == "low_latency" || key == "reflex" || key == "anti_lag") g_settings.low_latency = value == "1" || value == "true" || value == "on";
             else if (key == "low_latency_target_fps" || key == "target_fps") g_settings.low_latency_target_fps = (unsigned)std::stoul(value);
+            else if (key == "flip_metering" || key == "hardware_flip_metering") g_settings.flip_metering = value == "1" || value == "true" || value == "on";
+            else if (key == "disable_ui" || key == "no_ui") g_settings.disable_ui = value == "1" || value == "true" || value == "on";
+            else if (key == "stabilize_translucency" || key == "anti_ghosting") g_settings.stabilize_translucency = value == "1" || value == "true" || value == "on";
             else Log("nr_record.ini: unknown key %s", key.c_str());
         } catch (...) {
             Log("nr_record.ini: %s = %s is not a valid value", key.c_str(), value.c_str());
@@ -198,6 +233,15 @@ void ReadSettings() {
     if (env_fps) {
         try { g_settings.low_latency_target_fps = (unsigned)std::stoul(env_fps); } catch (...) {}
     }
+    const char* env_flip = std::getenv("ANR_FLIP_METERING");
+    if (env_flip && (std::string(env_flip) == "1" || std::string(env_flip) == "true" || std::string(env_flip) == "on"))
+        g_settings.flip_metering = true;
+    const char* env_ui = std::getenv("ANR_DISABLE_UI");
+    if (env_ui && (std::string(env_ui) == "1" || std::string(env_ui) == "true" || std::string(env_ui) == "on"))
+        g_settings.disable_ui = true;
+    const char* env_trans = std::getenv("ANR_STABILIZE_TRANSLUCENCY");
+    if (env_trans && (std::string(env_trans) == "1" || std::string(env_trans) == "true" || std::string(env_trans) == "on"))
+        g_settings.stabilize_translucency = true;
 }
 
 std::once_flag g_init_once;
@@ -219,6 +263,15 @@ void Init() {
         if (g_settings.low_latency) {
             Log("low latency frame pacing (Reflex / Anti-Lag emulator) active%s",
                 g_settings.low_latency_target_fps ? (" (target " + std::to_string(g_settings.low_latency_target_fps) + " FPS)").c_str() : "");
+        }
+        if (g_settings.flip_metering) {
+            Log("hardware flip metering active (display scanout synchronization enabled)");
+        }
+        if (g_settings.disable_ui) {
+            Log("UI composition bypass active (skipping world-space UI interpolation)");
+        }
+        if (g_settings.stabilize_translucency) {
+            Log("translucency & ribbon optical-flow stabilization active");
         }
     });
 }
@@ -650,6 +703,8 @@ std::vector<record::Input> Inputs(const Feature& f, const NVSDK_NGX_Parameter* p
     views.d3d12.assign(std::size(ROLES), record::D3D12Texture{});
     views.vk.assign(std::size(ROLES), record::VulkanTexture{});
     for (size_t i = 0; i < std::size(ROLES); i++) {
+        if (g_settings.disable_ui && (std::string(ROLES[i].first) == "ui" || std::string(ROLES[i].first) == "ui_alpha"))
+            continue;
         if (f.vulkan) {
             const NVSDK_NGX_ImageViewInfo_VK* v = ImageVk(p, ROLES[i].second);
             if (!v)
@@ -851,8 +906,12 @@ bool BypassVk(Feature& f, VkCommandBuffer cb, const NVSDK_NGX_Parameter* p) {
     if (backbuffer && real) {
         const uint32_t x = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectBaseX, 0);
         const uint32_t y = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectBaseY, 0);
-        const bool fits = backbuffer->Format == real->Format && x + real->Width <= backbuffer->Width &&
-                          y + real->Height <= backbuffer->Height && backbuffer->Image != real->Image;
+        const uint32_t subw = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectWidth, 0);
+        const uint32_t subh = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectHeight, 0);
+        const uint32_t copy_w = subw > 0 ? std::min(real->Width, subw) : real->Width;
+        const uint32_t copy_h = subh > 0 ? std::min(real->Height, subh) : real->Height;
+        const bool fits = backbuffer->Format == real->Format && x + copy_w <= backbuffer->Width &&
+                          y + copy_h <= backbuffer->Height && backbuffer->Image != real->Image;
         if (!f.logged_real) {
             f.logged_real = true;
             Log("OutputReal: %s", fits ? "the backbuffer is copied in" : "not written (format or size differs)");
@@ -874,7 +933,7 @@ bool BypassVk(Feature& f, VkCommandBuffer cb, const NVSDK_NGX_Parameter* p) {
             region.srcOffset = {(int32_t)x, (int32_t)y, 0};
             region.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, real->SubresourceRange.baseMipLevel,
                                      real->SubresourceRange.baseArrayLayer, 1};
-            region.extent = {real->Width, real->Height, 1};
+            region.extent = {copy_w, copy_h, 1};
             g_vk_copy_image(cb, backbuffer->Image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, real->Image,
                             VK_IMAGE_LAYOUT_GENERAL, 1, &region);
             std::swap(b.oldLayout, b.newLayout);
@@ -934,7 +993,11 @@ bool Bypass(Feature& f, const List& l, const NVSDK_NGX_Parameter* p) {
         const D3D12_RESOURCE_DESC b = backbuffer->GetDesc(), r = real->GetDesc();
         const uint32_t x = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectBaseX, 0);
         const uint32_t y = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectBaseY, 0);
-        const bool fits = b.Format == r.Format && x + r.Width <= b.Width && y + r.Height <= b.Height;
+        const uint32_t subw = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectWidth, 0);
+        const uint32_t subh = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_BackbufferSubrectHeight, 0);
+        const UINT copy_w = subw > 0 ? std::min((UINT)r.Width, (UINT)subw) : (UINT)r.Width;
+        const UINT copy_h = subh > 0 ? std::min((UINT)r.Height, (UINT)subh) : (UINT)r.Height;
+        const bool fits = b.Format == r.Format && x + copy_w <= b.Width && y + copy_h <= b.Height;
         if (!f.logged_real) {
             f.logged_real = true;
             Log("OutputReal: %s", fits ? "the backbuffer is copied in" : "not written (format or size differs)");
@@ -951,7 +1014,7 @@ bool Bypass(Feature& f, const List& l, const NVSDK_NGX_Parameter* p) {
 
             D3D12_TEXTURE_COPY_LOCATION to = {real, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, {}};
             D3D12_TEXTURE_COPY_LOCATION from = {backbuffer, D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX, {}};
-            const D3D12_BOX box = {x, y, 0, x + (UINT)r.Width, y + r.Height, 1};
+            const D3D12_BOX box = {x, y, 0, x + copy_w, y + copy_h, 1};
             list->CopyTextureRegion(&to, 0, 0, 0, &from, &box);
 
             D3D12_RESOURCE_BARRIER post[2] = {};
@@ -1043,9 +1106,9 @@ NVSDK_NGX_Result Evaluate(const List& list, const NVSDK_NGX_Handle* handle, NVSD
     const unsigned count = std::max(1u, Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, 1));
     const unsigned index = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, 1);
     if (index <= 1) {
-        if (g_settings.low_latency) {
+        if (g_settings.low_latency || g_settings.flip_metering) {
             g_pacer.Init();
-            g_pacer.Pace(g_settings.low_latency_target_fps);
+            g_pacer.Pace(g_settings.low_latency_target_fps, g_settings.flip_metering);
         }
         f->real_frames++;
         RealFrame(*f, list, p, count);
@@ -1176,8 +1239,10 @@ __declspec(dllexport) NVSDK_NGX_Result NVSDK_CONV NVSDK_NGX_D3D12_GetFeatureRequ
         Forward& fw = LoadForward();
         if (fw.requirements)
             return fw.requirements(adapter, discovery, out);
-        if (out)
+        if (out) {
+            std::memset(out, 0, sizeof(*out));
             out->FeatureSupported = NVSDK_NGX_FeatureSupportResult_Supported;
+        }
         return NVSDK_NGX_Result_Success;
     });
 }
@@ -1196,6 +1261,17 @@ __declspec(dllexport) NVSDK_NGX_Result NVSDK_CONV NVSDK_NGX_D3D12_PopulateParame
         p->Set(NVSDK_NGX_Parameter_FrameGeneration_MinDriverVersionMajor, 0);
         p->Set(NVSDK_NGX_Parameter_FrameGeneration_MinDriverVersionMinor, 0);
         p->Set(NVSDK_NGX_DLSSG_Parameter_MultiFrameCountMax, g_settings.max_generated);
+        p->Set(NVSDK_NGX_DLSSG_Parameter_UserInterfaceRecompositionEnabled, 1);
+        p->Set(NVSDK_NGX_DLSSG_Parameter_MvecDilated, 1);
+        p->Set(NVSDK_NGX_DLSSG_Parameter_CameraMotionIncluded, 1);
+        p->Set("DLSSG.Available", 1);
+        p->Set("DLSSG.FeatureInitResult", (int)NVSDK_NGX_Result_Success);
+        p->Set("DLSSG.NeedsUpdatedDriver", 0);
+        p->Set("DLSSG.MultiFrameCountMax", g_settings.max_generated);
+        if (g_settings.stabilize_translucency) {
+            p->Set("DLSSG.DilateMotionVectors", 1);
+            p->Set("DLSSG.StabilizeTranslucency", 1);
+        }
         return NVSDK_NGX_Result_Success;
     });
 }
@@ -1297,8 +1373,10 @@ __declspec(dllexport) NVSDK_NGX_Result NVSDK_CONV NVSDK_NGX_VULKAN_GetFeatureReq
         Forward& fw = LoadForward();
         if (fw.vk_requirements)
             return fw.vk_requirements(instance, physical, discovery, out);
-        if (out)
+        if (out) {
+            std::memset(out, 0, sizeof(*out));
             out->FeatureSupported = NVSDK_NGX_FeatureSupportResult_Supported;
+        }
         return NVSDK_NGX_Result_Success;
     });
 }

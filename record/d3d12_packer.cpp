@@ -19,7 +19,8 @@ using Microsoft::WRL::ComPtr;
 constexpr uint32_t REC_DEPTH = 1, REC_REFERENCE = 2, REC_SRGB = 4;
 // Shader-visible descriptors: 2 SRVs (the texture and its reference) per texture, reused in a ring long enough that
 // the GPU has finished with a pair before it comes round (TABLES / 8 real frames of 8 textures).
-constexpr uint32_t TABLES = 1024;
+// Expanded to 16384 (over 2000 frames) to prevent GPU MMU faults / TLB invalidation failure (Issue #46) during frame spikes.
+constexpr uint32_t TABLES = 16384;
 constexpr uint32_t STATUS_BYTES = 8 * MAX_SLOTS, TIMES_BYTES = 16 * MAX_SLOTS;
 // Vulkan format numbers (vulkan_core.h) that record.json names the texels by.
 namespace vk {

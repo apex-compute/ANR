@@ -42,6 +42,16 @@ struct VulkanCapabilities {
     };
     std::vector<Matrix> matrices;
     std::string DriverVersion() const;  // NVIDIA's 10.8.8.6 bits as 620.70.06; others as Vulkan's 10.10.12
+
+    bool IsIntelXe() const { return vendor_id == 0x8086; }
+    // Intel Arc Battlemage (BMG) and Lunar Lake Xe2 (e.g. Arc B390 0xb080, Arc 140V 0x64a0, B580 0xe20b):
+    // ensures recognition of Xe2 matrix pipeline capabilities and portable-xmx fallback without parity misses.
+    bool IsIntelXe2() const {
+        if (vendor_id != 0x8086) return false;
+        return (device_id >= 0xb080 && device_id <= 0xb09f) ||
+               (device_id >= 0x6420 && device_id <= 0x64af) ||
+               (device_id >= 0xe200 && device_id <= 0xe2ff);
+    }
 };
 
 // The capabilities of a physical device of an instance made elsewhere (a game's, through vkd3d-proton's interop);

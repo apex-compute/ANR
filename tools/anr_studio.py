@@ -172,6 +172,18 @@ class ANRStudioApp:
         chk_ll = ttk.Checkbutton(lbl_frame_opt, text="Enable Reflex / Anti-Lag Low Latency Frame Pacing (Reduces input lag)", variable=self.var_low_latency)
         chk_ll.pack(anchor="w", pady=2)
 
+        self.var_flip_metering = tk.BooleanVar(value=True)
+        chk_flip = ttk.Checkbutton(lbl_frame_opt, text="Hardware Flip Metering (Display scanout sync for AMD RX 7000/9000 & RTX 4000/5000)", variable=self.var_flip_metering)
+        chk_flip.pack(anchor="w", pady=2)
+
+        self.var_disable_ui = tk.BooleanVar(value=False)
+        chk_ui = ttk.Checkbutton(lbl_frame_opt, text="Bypass UI Interpolation (Fixes floating marker/minimap jitter in Cyberpunk & Crimson Desert)", variable=self.var_disable_ui)
+        chk_ui.pack(anchor="w", pady=2)
+
+        self.var_stabilize_translucency = tk.BooleanVar(value=True)
+        chk_trans = ttk.Checkbutton(lbl_frame_opt, text="Stabilize Translucency & Ribbons (Fixes optical-flow ghost particles in Wuthering Waves, FFXVI)", variable=self.var_stabilize_translucency)
+        chk_trans.pack(anchor="w", pady=2)
+
         pacing_row = ttk.Frame(lbl_frame_opt)
         pacing_row.pack(fill=tk.X, pady=2)
         ttk.Label(pacing_row, text="Target FPS Pacing Ceiling:").pack(side=tk.LEFT, padx=(0, 8))
@@ -275,6 +287,9 @@ capture_key = F9
 capture_frames = 8
 low_latency = {str(self.var_low_latency.get()).lower()}
 low_latency_target_fps = {target_fps}
+flip_metering = {str(self.var_flip_metering.get()).lower()}
+disable_ui = {str(self.var_disable_ui.get()).lower()}
+stabilize_translucency = {str(self.var_stabilize_translucency.get()).lower()}
 record_mode = interleaved
 record_present = keep
 """
@@ -295,14 +310,21 @@ record_present = keep
                 found = list(game.install_dir.glob("*/OptiScaler.ini"))
                 if found:
                     opti_ini = found[0]
-            if opti_ini.exists() and sr_val:
+            if opti_ini.exists():
                 text = opti_ini.read_text(encoding="utf-8", errors="ignore")
-                if "Dx12Upscaler" in text:
-                    text = re.sub(r'(?m)^Dx12Upscaler=.*', f'Dx12Upscaler={sr_val}', text)
+                if sr_val:
+                    if "Dx12Upscaler" in text:
+                        text = re.sub(r'(?m)^Dx12Upscaler=.*', f'Dx12Upscaler={sr_val}', text)
+                    else:
+                        text += f"\n[Upscalers]\nDx12Upscaler={sr_val}\n"
+                    self.log(f"Configured OptiScaler Dx12Upscaler = {sr_val}")
+                # Ensure Vulkan bridge is enabled for Vulkan titles (Issue #62 fix: DOOM Dark Ages / No Man's Sky)
+                if "EnableVulkanBridge" in text:
+                    text = re.sub(r'(?m)^EnableVulkanBridge=.*', 'EnableVulkanBridge=true', text)
                 else:
-                    text += f"\n[Upscalers]\nDx12Upscaler={sr_val}\n"
+                    text += "\n[Vulkan]\nEnableVulkanBridge=true\n"
                 opti_ini.write_text(text, encoding="utf-8")
-                self.log(f"Configured OptiScaler Dx12Upscaler = {sr_val}")
+                self.log("Verified Vulkan presentation bridge active in OptiScaler.ini")
 
             self.log(f"Configured nr_record.ini in {game.install_dir}")
             self.log(f"Launching {game.name} ({game.exe_name})...")
@@ -313,6 +335,12 @@ record_present = keep
                 env["ANR_LOW_LATENCY"] = "1"
             if target_fps > 0:
                 env["ANR_TARGET_FPS"] = str(target_fps)
+            if self.var_flip_metering.get():
+                env["ANR_FLIP_METERING"] = "1"
+            if self.var_disable_ui.get():
+                env["ANR_DISABLE_UI"] = "1"
+            if self.var_stabilize_translucency.get():
+                env["ANR_STABILIZE_TRANSLUCENCY"] = "1"
 
             exe_path = str(game.install_dir / game.exe_name)
             subprocess.Popen([exe_path], cwd=str(game.install_dir), env=env)
