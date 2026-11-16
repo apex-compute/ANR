@@ -644,6 +644,8 @@ record::SrCall CallOf(const Feature& f, const NVSDK_NGX_Parameter* p) {
     c.motion_scale[1] = Get<float>(p, "MV.Scale.Y", 1);
     c.render_size[0] = Get<unsigned>(p, "DLSS.Render.Subrect.Dimensions.Width", f.width);
     c.render_size[1] = Get<unsigned>(p, "DLSS.Render.Subrect.Dimensions.Height", f.height);
+    if (c.render_size[0] == 0) c.render_size[0] = f.width;
+    if (c.render_size[1] == 0) c.render_size[1] = f.height;
     c.output_size[0] = f.out_width;
     c.output_size[1] = f.out_height;
     c.pre_exposure = Get<float>(p, "DLSS.Pre.Exposure", 1);

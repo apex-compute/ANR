@@ -167,7 +167,7 @@ def main():
         if not ok:
             sys.exit(1)
 
-        project_file = args.out / "compare.json"
+        project_file = args.out / "compare.compare.json"
         cmd_proj = [
             str(video_exe),
             "project", str(video_a), str(video_b),

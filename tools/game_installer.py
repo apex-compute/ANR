@@ -84,26 +84,36 @@ def probe_game_folder(folder):
         if valid_exes:
             info["exe"] = valid_exes[0]
 
-        for p in folder.rglob("*"):
-            if not p.is_file():
-                continue
-            name_lower = p.name.lower()
-            if name_lower == "optiscaler.ini":
-                info["optiscaler"] = True
-                info["optiscaler_ini"] = p
-            elif name_lower == "nvngx_dlssg.dll":
-                if "apex neural rendering" in str(p).lower():
-                    info["anr_fg"] = True
-                elif "nr-record" in str(p).lower():
-                    info["nr_record"] = True
-                else:
-                    info["dlssg"] = True
-            elif name_lower == "nvngx_dlss.dll":
-                info["dlss"] = True
-            elif "fidelityfx" in name_lower or name_lower.startswith("ffx_"):
-                info["fsr"] = True
-            elif name_lower == "libxess.dll":
-                info["xess"] = True
+        # Scan game root and binary directories up to depth 2 to avoid scanning massive asset packs
+        scan_dirs = [folder]
+        for sub in folder.iterdir():
+            if sub.is_dir() and not any(ign in sub.name.lower() for ign in ("paks", "content", "data", "music", "sound", "textures", "movies", "assets")):
+                scan_dirs.append(sub)
+                for sub2 in sub.iterdir():
+                    if sub2.is_dir() and not any(ign in sub2.name.lower() for ign in ("paks", "content", "data", "music", "sound", "textures", "movies", "assets")):
+                        scan_dirs.append(sub2)
+
+        for d in scan_dirs:
+            for p in d.iterdir():
+                if not p.is_file():
+                    continue
+                name_lower = p.name.lower()
+                if name_lower == "optiscaler.ini":
+                    info["optiscaler"] = True
+                    info["optiscaler_ini"] = p
+                elif name_lower == "nvngx_dlssg.dll":
+                    if "apex neural rendering" in str(p).lower():
+                        info["anr_fg"] = True
+                    elif "nr-record" in str(p).lower():
+                        info["nr_record"] = True
+                    else:
+                        info["dlssg"] = True
+                elif name_lower == "nvngx_dlss.dll":
+                    info["dlss"] = True
+                elif "fidelityfx" in name_lower or name_lower.startswith("ffx_"):
+                    info["fsr"] = True
+                elif name_lower == "libxess.dll":
+                    info["xess"] = True
     except Exception:
         pass
 

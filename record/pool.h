@@ -62,6 +62,7 @@ private:
         for (;;) {
             Job* job = nullptr;
             work_.wait(lock, [&] {
+                job = nullptr;
                 for (Job* j : jobs_)
                     if (j->next.load() < j->n) {
                         job = j;

@@ -245,7 +245,9 @@ def export_replay_directory(in_dir: Path, out_file: Path, codec: str, quality: s
                     if hdr:
                         out_bytes = np.clip(arr * 65535.0, 0, 65535).astype(np.uint16).tobytes()
                     else:
-                        out_bytes = np.clip(arr * 255.0, 0, 255).astype(np.uint8).tobytes()
+                        # Map scene-linear light to standard sRGB transfer curve
+                        srgb = np.where(arr <= 0.0031308, 12.92 * arr, 1.055 * (np.maximum(arr, 0.0) ** (1.0 / 2.4)) - 0.055)
+                        out_bytes = np.clip(srgb * 255.0, 0, 255).astype(np.uint8).tobytes()
                 else:
                     # Fallback conversion without numpy
                     n_pixels = len(raw_texels) // 8
@@ -258,9 +260,13 @@ def export_replay_directory(in_dir: Path, out_file: Path, codec: str, quality: s
                                                           int(max(0.0, min(1.0, g)) * 65535),
                                                           int(max(0.0, min(1.0, b)) * 65535)))
                         else:
-                            buf.extend(struct.pack("3B", int(max(0.0, min(1.0, r)) * 255),
-                                                         int(max(0.0, min(1.0, g)) * 255),
-                                                         int(max(0.0, min(1.0, b)) * 255)))
+                            # Linear to sRGB transfer function
+                            s_r = 12.92 * r if r <= 0.0031308 else 1.055 * (max(0.0, r) ** (1.0 / 2.4)) - 0.055
+                            s_g = 12.92 * g if g <= 0.0031308 else 1.055 * (max(0.0, g) ** (1.0 / 2.4)) - 0.055
+                            s_b = 12.92 * b if b <= 0.0031308 else 1.055 * (max(0.0, b) ** (1.0 / 2.4)) - 0.055
+                            buf.extend(struct.pack("3B", int(max(0.0, min(1.0, s_r)) * 255),
+                                                         int(max(0.0, min(1.0, s_g)) * 255),
+                                                         int(max(0.0, min(1.0, s_b)) * 255)))
                     out_bytes = bytes(buf)
 
                 try:

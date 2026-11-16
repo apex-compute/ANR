@@ -515,6 +515,7 @@ bool Fg(const Recording& r, const Call& call, FgCall& out, std::string& error) {
     out.index = call.index;
     out.count = call.count;
     out.frame = call.frame;
+    out.qpc = call.qpc;
     auto u = [&](const char* name, uint32_t fallback = 0) {
         uint32_t v = fallback;
         r.Unsigned(call, std::string("DLSSG.") + name, v);
@@ -574,7 +575,7 @@ nlohmann::json ToJson(const FgCall& c) {
     auto v = [](const float* p, int n) { return std::vector<float>(p, p + n); };
     auto rect = [](const uint32_t* p) { return std::vector<uint32_t>(p, p + 4); };
     nlohmann::json j = {
-        {"index", c.index}, {"count", c.count}, {"frame", c.frame}, {"reset", c.reset},
+        {"index", c.index}, {"count", c.count}, {"frame", c.frame}, {"qpc", c.qpc}, {"reset", c.reset},
         {"depth_inverted", c.depth_inverted}, {"hdr", c.hdr}, {"motion_jittered", c.motion_jittered},
         {"camera_motion_included", c.camera_motion_included}, {"orthographic", c.orthographic},
         {"jitter", v(c.jitter, 2)}, {"motion_scale", v(c.motion_scale, 2)}, {"near", c.near_plane},

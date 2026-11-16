@@ -185,8 +185,12 @@ def evaluate_directories(dir_ref: Path, dir_test: Path, out_report: Optional[Pat
         if (idx + 1) % 10 == 0 or idx + 1 == len(common_keys):
             print(f"Frame [{idx+1}/{len(common_keys)}] {key:<20} | PSNR: {metrics['psnr_db']:>6.2f} dB | SSIM: {metrics['ssim']:.4f}")
 
-    avg_psnr = total_psnr / len(common_keys)
-    avg_ssim = total_ssim / len(common_keys)
+    if not results:
+        print("[Error] No valid matching frames could be evaluated.")
+        return False
+
+    avg_psnr = total_psnr / len(results)
+    avg_ssim = total_ssim / len(results)
 
     print("-" * 70)
     print(f"AVERAGE PSNR: {avg_psnr:.2f} dB")

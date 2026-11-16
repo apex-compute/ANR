@@ -351,12 +351,34 @@ record_present = keep
     def open_compare_tool(self):
         py_script = SCRIPT_DIR / "nr_compare.py"
         self.log("Opening 1-Click Comparison Tool...")
-        subprocess.Popen([sys.executable, str(py_script), "--help"])
+        rec_dir = filedialog.askdirectory(title="Select nr-record Capture Directory to Compare")
+        if rec_dir:
+            self.log(f"Comparing capture: {rec_dir}")
+            if sys.platform == "win32":
+                subprocess.Popen(f'start cmd /k "{sys.executable}" "{py_script}" --record "{rec_dir}" --generator provider --view', shell=True)
+            else:
+                subprocess.Popen([sys.executable, str(py_script), "--record", rec_dir, "--generator", "provider", "--view"])
+        else:
+            if sys.platform == "win32":
+                subprocess.Popen(f'start cmd /k "{sys.executable}" "{py_script}" --help', shell=True)
+            else:
+                subprocess.Popen([sys.executable, str(py_script), "--help"])
 
     def open_export_tool(self):
         py_script = SCRIPT_DIR / "nr_export.py"
         self.log("Opening Universal Video Exporter...")
-        subprocess.Popen([sys.executable, str(py_script), "--help"])
+        in_dir = filedialog.askdirectory(title="Select nr-replay Output Directory Containing .nrraw Frames")
+        if in_dir:
+            self.log(f"Exporting replay frames from: {in_dir}")
+            if sys.platform == "win32":
+                subprocess.Popen(f'start cmd /k "{sys.executable}" "{py_script}" --in-dir "{in_dir}"', shell=True)
+            else:
+                subprocess.Popen([sys.executable, str(py_script), "--in-dir", in_dir])
+        else:
+            if sys.platform == "win32":
+                subprocess.Popen(f'start cmd /k "{sys.executable}" "{py_script}" --help', shell=True)
+            else:
+                subprocess.Popen([sys.executable, str(py_script), "--help"])
 
 
 def main():

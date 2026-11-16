@@ -90,6 +90,7 @@ bool Decode(Recording& r, const IndexRecord& ix, Pool& pool, DecodeScratch& s,
 struct FgCall {
     uint32_t index = 0, count = 0;  // generated frame index (1 to count) of this real frame's count
     uint64_t frame = 0;
+    int64_t qpc = 0;
     bool reset = false, depth_inverted = false, hdr = false, motion_jittered = false, camera_motion_included = false,
          orthographic = false;
     float jitter[2] = {0, 0};        // render pixels
