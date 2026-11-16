@@ -25,6 +25,8 @@ cc_library(
 cc_binary(
     name = "nr-replay",
     srcs = [
+        "ffx_fg_generator.cpp",
+        "ffx_fg_generator.h",
         "generator.h",
         "ngx_generator.cpp",
         "nr_replay.cpp",

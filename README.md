@@ -20,13 +20,18 @@
 1. Download a package from [Releases](../../releases):
    - `anr-fg-full`: for games without OptiScaler.
    - `anr-fg-addon`: for games that already use [OptiScaler](https://github.com/optiscaler/OptiScaler).
-2. Close the game, extract the package and run the installer with the folder of the game's `.exe`:
+2. Scan installed Steam & Epic games and configure automatically:
+   ```bat
+   python tools/game_installer.py --scan
+   python tools/game_installer.py --install <game_number> [--upscaler xess]
+   ```
+   Or close the game, extract the package and run the installer with the folder of the game's `.exe`:
    - Windows: `install.cmd`
    - Linux and Steam Deck (Proton): `sh install.sh "<folder>"`, then set the game's launch options to the line it
      prints: `WINEDLLOVERRIDES="dxgi=n,b" %command%`, or `winmm=n,b` in Vulkan games
 3. In the game, turn on frame generation (the NVIDIA option where the game offers several).
 
-To uninstall, run `uninstall.cmd` or `sh uninstall.sh` with the same folder.
+To uninstall, run `python tools/game_installer.py --uninstall <game_number>`, `uninstall.cmd` or `sh uninstall.sh` with the same folder.
 
 ## Supported GPUs
 
@@ -66,6 +71,12 @@ Requirements:
 3. **Replay.** On Windows, in the package folder (`REC` is a recording's folder):
 
    ```bat
+   python tools\nr_compare.py --record REC --out out\cmp --generator provider --dll "<ANR FG folder>\nvngx_dlssg.dll" --label "ANR FG" --b-generator nvidia --b-dll "<game>\nvngx_dlssg.dll" --b-label DLSS-G --view
+   ```
+
+   Or run each step by hand:
+
+   ```bat
    tools\nr-record.exe info REC
    tools\nr-replay.exe --record REC --out out\anr --generator provider --dll "<ANR FG folder>\nvngx_dlssg.dll" --label "ANR FG" --stream - | tools\nr-video.exe video - --out out\anr.mp4
    tools\nr-replay.exe --record REC --out out\dlssg --generator nvidia --dll "<game>\nvngx_dlssg.dll" --label DLSS-G --stream - | tools\nr-video.exe video - --out out\dlssg.mp4
@@ -85,11 +96,21 @@ Requirements:
 
 Docs: [recording](record/README.md), [format](record/FORMAT.md), [replay and videos](record/replay/README.md), [viewer](renderer/README.md).
 
-Build: `bazel build //record:nr-record //record/replay:nr-video //renderer`; Windows parts: `bazel build --config=windows_cross //record/capture:package //record/replay:nr-replay`.
+Build with Bazel: `bazel build //record:nr-record //record/replay:nr-video //renderer`; Windows parts: `bazel build --config=windows_cross //record/capture:package //record/replay:nr-replay`.
+
+Build core tools with CMake: `cmake -B build && cmake --build build --config Release`.
+
+### Productivity Tools
+
+- **ANR Studio GUI (`tools/anr_studio.py` / `tools/anr_studio.ps1`)**: Native 1-click launcher and manager to scan installed games, pick Super Resolution & Frame Generation providers, enable low-latency Reflex/Anti-Lag pacing, and launch games directly.
+- **Universal Hardware Video Exporter (`tools/nr_export.py` / `tools/nr_export.ps1`)**: Hardware-accelerated 10-bit AV1/HEVC/H.264 exporter with automatic GPU vendor detection (Intel QuickSync, NVIDIA NVENC, AMD AMF, and CPU fallback).
+- **Mathematical Quality Evaluator (`tools/nr_metrics.py` / `tools/nr_metrics.ps1`)**: Computes exact PSNR, SSIM, and temporal stability metrics between reference and generated frames.
+- **1-Click Windows Comparison Tool (`tools/nr_compare.py` / `tools/nr_compare.ps1`)**: Automates replaying, video extraction, and side-by-side comparison.
+- **Game Auto-Detector & Installer (`tools/game_installer.py` / `tools/game_installer.ps1`)**: Automatically scans Steam and Epic libraries and installs capture DLLs.
 
 ## Contributors
 
-- [@k0u3h1k](https://github.com/k0u3h1k)
+- **k0u3h1k** ([@k0u3h1k](https://github.com/k0u3h1k)) — Performance optimizations, FSR 3 / FidelityFX FG replay engine, Reflex/Anti-Lag low-latency frame pacing, ANR Studio GUI, Universal Video Exporter, Mathematical Quality Evaluator, 1-Click Comparison Runner, Game Auto-Installer, and CMake build system. See [CONTRIBUTORS.md](CONTRIBUTORS.md).
 
 ## Citation
 

@@ -29,17 +29,18 @@ The tools ship no implementation. Each is a DLL the user gives, loaded at run ti
 |---|---|---|
 | `provider` | A DLSS-G provider's `nvngx_dlssg.dll`, for example the ANR FG release's folder (the DLL with its files beside it) | Its own NGX D3D12 exports (`NVSDK_NGX_D3D12_Init_Ext`, `CreateFeature`, `EvaluateFeature`), with a parameter map of `nr-replay`'s |
 | `nvidia` | NVIDIA's `nvngx_dlssg.dll`, for example from a game's folder | NVIDIA's NGX core from the driver (`_nvngx.dll`) with the DLL's folder as its search path, so that NGX loads DLSS-G from that DLL |
+| `fsr` / `ffx` | AMD's `amd_fidelityfx_dx12.dll` or `amd_fidelityfx_loader_dx12.dll` (FSR 3 / 3.1) | AMD's FidelityFX API exports (`ffxCreateContext`, `ffxDispatch`), driving optical flow and frame generation passes from the reader's typed parameters (`record::FgCall`) |
 
-Per recorded real frame, `nr-replay` calls `EvaluateFeature` once per generated frame, as a game's DLSS-G host does:
+Per recorded real frame, `nr-replay` calls `EvaluateFeature` (for DLSS-G / NGX) or `ffxDispatch` (for FidelityFX) once per generated frame:
 - The textures are D3D12 textures of their recorded DXGI formats (a Vulkan recording's formats map to their D3D12 equivalents), in the states DLSS-G hosts give them: the backbuffer `NON_PIXEL_SHADER_RESOURCE`, the HUD-less color, UI, depth and motion `COPY_DEST`, the outputs `UNORDERED_ACCESS`.
-- Each call gets its recorded NGX parameters. NGX parameters have no declared type, so the recording holds each value read both ways; the names NVIDIA's DLSS-G helper header sets as floats, and values whose two readings differ, go back as floats, the others as unsigned integers.
+- Each call gets its recorded parameters: NGX parameters for DLSS-G generators, and typed parameters (`record::FgCall`: jitter, motion scale, camera clip planes, inverted depth, field of view) for FidelityFX.
 - `nr-replay` sets the size, backbuffer format, `MultiFrameCount`, `MultiFrameIndex` and `Reset` itself. `Reset` is 1 at the first replayed frame and after dropped frames (frames.idx `dropped`), and there the outputs are discarded: a run restarts with no generated frames before its first real frame.
 - With `--multiplier` other than the recorded one, every generated frame gets the real frame's first call with its own count and index.
 - `nvidia` only: where the recording has no camera matrices, field of view, aspect ratio or camera basis, DLSS-G gets a perspective projection from the recorded near and far planes (1 radian, the output's aspect where those are missing), identities for the other matrices, and a basis along the axes. A provider gets what the game gave.
 
-`replay.json` names the DLL with its file version and SHA-256. With `nvidia`, it also names the NGX core and the `nvngx_dlssg.dll` NGX loaded, which can differ from `--dll` (NGX may prefer a newer copy it finds).
+`replay.json` names the DLL with its file version and SHA-256. With `nvidia`, it also names the NGX core and the `nvngx_dlssg.dll` NGX loaded, which can differ from `--dll` (NGX may prefer a newer copy it finds). With `fsr` / `ffx`, it includes the FidelityFX provider version query.
 
-Other implementations fit behind `FgGenerator` ([generator.h](generator.h)): create on the recording's size and formats, evaluate one real frame's calls into the output textures, describe. AMD's FidelityFX frame generation DLLs and Intel's XeSS frame generation (`libxess_fg.dll`) would take the reader's typed parameters (`record::FgCall`) instead of NGX's names; XeSS frame generation presents through a swap chain, so its implementation would keep one of its own and copy the generated frames out. Neither is implemented yet.
+Other implementations fit behind `FgGenerator` ([generator.h](generator.h)): create on the recording's size and formats, evaluate one real frame's calls into the output textures, describe. Intel's XeSS frame generation (`libxess_fg.dll`) presents through a swap chain, so its implementation would keep one of its own and copy the generated frames out.
 
 ## SR and RR
 

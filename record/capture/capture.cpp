@@ -24,6 +24,7 @@
 #include <cctype>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <ctime>
 #include <cwctype>
@@ -65,6 +66,8 @@ struct Settings {
     int record_zstd_level = 0;
     double record_free_gb = 50;
     unsigned max_generated = 5;
+    bool low_latency = false;              // Reflex / Anti-Lag frame pacing
+    unsigned low_latency_target_fps = 0;  // 0: adaptive pacing ceiling (240Hz), >0: exact target FPS
 };
 
 Settings g_settings;
@@ -106,6 +109,50 @@ std::string Trim(const std::string& s) {
     return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
 }
 
+// Low-latency frame pacing (Reflex / Anti-Lag emulator): limits GPU command queue buildup
+// to eliminate input lag spikes while frame generation is running.
+struct LatencyPacer {
+    LARGE_INTEGER freq = {};
+    LARGE_INTEGER last_tick = {};
+    bool initialized = false;
+    std::mutex pace_mutex;
+
+    void Init() {
+        std::lock_guard<std::mutex> lock(pace_mutex);
+        if (!initialized) {
+            QueryPerformanceFrequency(&freq);
+            QueryPerformanceCounter(&last_tick);
+            initialized = true;
+        }
+    }
+
+    void Pace(unsigned target_fps) {
+        std::lock_guard<std::mutex> lock(pace_mutex);
+        if (!freq.QuadPart)
+            return;
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        // Default target interval: 240 Hz queue ceiling (0.00416 sec) if target_fps == 0
+        const double min_interval_sec = target_fps > 0 ? (1.0 / (double)target_fps) : 0.00416;
+        double elapsed_sec = (double)(now.QuadPart - last_tick.QuadPart) / (double)freq.QuadPart;
+
+        if (elapsed_sec < min_interval_sec) {
+            const double wait_sec = min_interval_sec - elapsed_sec;
+            const DWORD sleep_ms = (DWORD)(wait_sec * 1000.0);
+            if (sleep_ms > 1)
+                Sleep(sleep_ms - 1);
+            do {
+                YieldProcessor();
+                QueryPerformanceCounter(&now);
+                elapsed_sec = (double)(now.QuadPart - last_tick.QuadPart) / (double)freq.QuadPart;
+            } while (elapsed_sec < min_interval_sec);
+        }
+        last_tick = now;
+    }
+};
+
+LatencyPacer g_pacer;
+
 // nr_record.ini next to the DLL: key = value lines, ; or # comments.
 void ReadSettings() {
     std::ifstream ini(g_dir + "\\nr_record.ini");
@@ -136,10 +183,20 @@ void ReadSettings() {
             else if (key == "forward") g_settings.forward = value;
             else if (key == "nvidia_dlssg") g_settings.nvidia_dlssg = value;
             else if (key == "max_generated") g_settings.max_generated = std::clamp((unsigned)std::stoul(value), 1u, 5u);
+            else if (key == "low_latency" || key == "reflex" || key == "anti_lag") g_settings.low_latency = value == "1" || value == "true" || value == "on";
+            else if (key == "low_latency_target_fps" || key == "target_fps") g_settings.low_latency_target_fps = (unsigned)std::stoul(value);
             else Log("nr_record.ini: unknown key %s", key.c_str());
         } catch (...) {
             Log("nr_record.ini: %s = %s is not a valid value", key.c_str(), value.c_str());
         }
+    }
+    // Environment variable overrides
+    const char* env_ll = std::getenv("ANR_LOW_LATENCY");
+    if (env_ll && (std::string(env_ll) == "1" || std::string(env_ll) == "true" || std::string(env_ll) == "on"))
+        g_settings.low_latency = true;
+    const char* env_fps = std::getenv("ANR_TARGET_FPS");
+    if (env_fps) {
+        try { g_settings.low_latency_target_fps = (unsigned)std::stoul(env_fps); } catch (...) {}
     }
 }
 
@@ -159,6 +216,10 @@ void Init() {
         Log("nr-record capture DLL in %s; record key 0x%x, capture key 0x%x (%u frames), recordings into %s",
             g_dir.c_str(), g_settings.record_key, g_settings.capture_key, g_settings.capture_frames,
             record::DefaultRoot(g_settings.record_dir).c_str());
+        if (g_settings.low_latency) {
+            Log("low latency frame pacing (Reflex / Anti-Lag emulator) active%s",
+                g_settings.low_latency_target_fps ? (" (target " + std::to_string(g_settings.low_latency_target_fps) + " FPS)").c_str() : "");
+        }
     });
 }
 
@@ -982,6 +1043,10 @@ NVSDK_NGX_Result Evaluate(const List& list, const NVSDK_NGX_Handle* handle, NVSD
     const unsigned count = std::max(1u, Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameCount, 1));
     const unsigned index = Get<unsigned>(p, NVSDK_NGX_DLSSG_Parameter_MultiFrameIndex, 1);
     if (index <= 1) {
+        if (g_settings.low_latency) {
+            g_pacer.Init();
+            g_pacer.Pace(g_settings.low_latency_target_fps);
+        }
         f->real_frames++;
         RealFrame(*f, list, p, count);
     }

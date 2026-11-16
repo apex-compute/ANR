@@ -72,6 +72,11 @@ public:
 std::unique_ptr<FgGenerator> MakeNgxGenerator(const std::string& kind, const std::string& dll,
                                               const std::string& label, bool log, std::string& error);
 
+// AMD's FidelityFX Frame Generation interface (FSR 3 / 3.1). dll is amd_fidelityfx_dx12.dll or
+// amd_fidelityfx_loader_dx12.dll.
+std::unique_ptr<FgGenerator> MakeFfxFgGenerator(const std::string& dll, const std::string& label,
+                                                std::string& error);
+
 // The file version (a.b.c.d) and SHA-256 of a DLL; empty where not readable.
 std::string FileVersion(const std::string& path);
 std::string FileSha256(const std::string& path);

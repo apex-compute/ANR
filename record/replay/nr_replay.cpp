@@ -3,7 +3,7 @@
 // each call's recorded parameters; its generated frames are read back and written as raw frames and/or a frame stream,
 // with replay.json describing every output frame.
 //
-//   nr-replay --record DIR --out DIR --generator provider|nvidia --dll PATH [--label TEXT] [--frames A:B]
+//   nr-replay --record DIR --out DIR --generator provider|nvidia|fsr|ffx --dll PATH [--label TEXT] [--frames A:B]
 //       [--multiplier M] [--mode interleaved|generated] [--raw] [--stream PATH|-] [--ngx-log]
 
 #include <windows.h>
@@ -51,7 +51,7 @@ using replay::StreamWriter;
 namespace {
 
 constexpr const char* USAGE =
-    "usage: nr-replay --record DIR --out DIR --generator provider|nvidia --dll PATH [--label TEXT]\n"
+    "usage: nr-replay --record DIR --out DIR --generator provider|nvidia|fsr|ffx --dll PATH [--label TEXT]\n"
     "                 [--frames A:B] [--multiplier M] [--mode interleaved|generated] [--raw] [--stream PATH|-]\n"
     "                 [--ngx-log]\n";
 
@@ -415,8 +415,14 @@ int Run(const Options& o, nlohmann::json& report, std::string& error) {
     }
 
     // The generator.
-    std::unique_ptr<replay::FgGenerator> generator = replay::MakeNgxGenerator(o.generator, o.dll, o.label, o.ngx_log,
-                                                                              error);
+    std::unique_ptr<replay::FgGenerator> generator;
+    if (o.generator == "fsr" || o.generator == "ffx") {
+        generator = replay::MakeFfxFgGenerator(o.dll, o.label, error);
+    } else if (o.generator == "provider" || o.generator == "nvidia") {
+        generator = replay::MakeNgxGenerator(o.generator, o.dll, o.label, o.ngx_log, error);
+    } else {
+        error = "--generator must be provider, nvidia, fsr or ffx";
+    }
     if (!generator)
         return 1;
     replay::FgSetup setup;
